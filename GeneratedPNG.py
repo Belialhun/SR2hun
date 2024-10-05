@@ -1,22 +1,25 @@
 from PIL import Image, ImageDraw, ImageFont, ImageFilter, PngImagePlugin
 import os
 
+# narratorc stílus hozzáadva
+#tpng feature hozzáadva
+#kihagyja a létező fileokat, META adatok alpján
+#[NLA] & [NRA] felismerése DOCTYPE5-től OK
+#simple
+#[i] és [b]
 def create_image(text, output_path):
     img = Image.new('RGB', (512, 448), color=(0, 0, 0))
     draw = ImageDraw.Draw(img)
     
-    # Define fonts
     fonts = {
         "regular": ImageFont.truetype("arial.ttf", 14, encoding="unic"),
         "italic": ImageFont.truetype("ariali.ttf", 14, encoding="unic"),
-        "bold": ImageFont.truetype("arialbd.ttf", 14, encoding="unic"),
         "title": ImageFont.truetype("arial.ttf", 24, encoding="unic"),
         "centered": ImageFont.truetype("arial.ttf", 14, encoding="unic"),
         "white_bg": ImageFont.truetype("arial.ttf", 26, encoding="unic"),
         "blue_center": ImageFont.truetype("arial.ttf", 24, encoding="unic")
     }
     
-    # Define styles
     styles = {
         "title": {"font": fonts["title"], "fill": (245, 245, 245)},
         "narrator": {"font": fonts["italic"], "fill": (80, 131, 213)},
@@ -27,74 +30,84 @@ def create_image(text, output_path):
         "blue_center": {"font": fonts["blue_center"], "fill": (5, 20, 220)}
     }
     
-
-# Define line spacing for different styles
-line_spacing = {
-    "title": 15,
-    "narrator": 4,
-    "dialogue": 4,
-    "centered": 4,
-    "narratorc": 4
-}
-
-# Check if the text reaches the top of the left_arrow.png
-left_arrow_top = img.height - 40  # Assuming the arrow is 40 pixels from the bottom
-if y_position >= left_arrow_top:
-    # Calculate the reduction factor
-    reduction_amount = y_position - left_arrow_top
-    reduction_factor = reduction_amount / y_position
-    print(f"Warning: Text exceeds the limit by {reduction_amount} pixels. Reducing line spacing by a factor of {reduction_factor:.2f}.")
-
-    for key in line_spacing:
-        line_spacing[key] = max(1, line_spacing[key] - reduction_factor * line_spacing[key])
-
-    # Redraw the text with the reduced line spacing
+    line_spacing = {
+        "title": 15,
+        "narrator": 4,
+        "dialogue": 4,
+        "centered": 4,
+        "narratorc": 4
+    }
+    
     y_position = 20
-    previous_style_key = None
+    max_width = img.width - 40
+    show_prev = True
+    show_next = True
+    
     for line in text.split('\n'):
-        original_line = line
         if "[NLA]" in line:
             show_prev = False
         if "[NRA]" in line:
             show_next = False
-
-        style_key = None
+        
         if line.startswith("[title]"):
-            style_key = "title"
+            style = styles["title"]
             line = line.replace("[title]", "")
-        elif line.startswith("[narrator]"):
-            style_key = "narrator"
-            line = line.replace("[narrator]", "")
-        elif line.startswith("[narratorc]"):
-            style_key = "narratorc"
-            line = line.replace("[narratorc]", "")
+            position = (img.width // 2 - draw.textbbox((0, 0), line, font=style["font"])[2] // 2, y_position)
+            draw.text((position[0], position[1]), line, font=styles["white_bg"]["font"], fill=styles["white_bg"]["fill"])
+            img_blur_white = img.filter(ImageFilter.GaussianBlur(radius=15))
+            img.paste(img_blur_white)
+            draw.text((position[0], position[1]), line, font=styles["blue_center"]["font"], fill=styles["blue_center"]["fill"])
+            img_blur_blue = img.filter(ImageFilter.GaussianBlur(radius=5))
+            img.paste(img_blur_blue)
+            draw.text(position, line, font=style["font"], fill=style["fill"])
+            y_position += draw.textbbox((0, 0), line, font=style["font"])[3] + line_spacing["title"]
+        
+        elif line.startswith("[narrator]") or line.startswith("[narratorc]"):
+            style = styles["narrator"] if line.startswith("[narrator]") else styles["narratorc"]
+            line = line.replace("[narrator]", "").replace("[narratorc]", "")
+            words = line.split(' ')
+            current_line = ""
+            for word in words:
+                test_line = current_line + word + " "
+                if draw.textbbox((0, 0), test_line, font=style["font"])[2] <= max_width - 40:
+                    current_line = test_line
+                else:
+                    draw.text((50, y_position), current_line.strip(), font=style["font"], fill=style["fill"])
+                    y_position += draw.textbbox((0, 0), current_line.strip(), font=style["font"])[3] + line_spacing["narrator"]
+                    current_line = word + " "
+            draw.text((50, y_position), current_line.strip(), font=style["font"], fill=style["fill"])
+            y_position += draw.textbbox((0, 0), current_line.strip(), font=style["font"])[3] + line_spacing["narrator"]
+        
         elif line.startswith("[dialogue]"):
-            style_key = "dialogue"
-            line = line.replace("[dialogue]", "").replace("+", "")
+            style = styles["dialogue"]
+            line = line.replace("[dialogue]", "")
+            words = line.split(' ')
+            current_line = ""
+            for word in words:
+                if word == "+":
+                    y_position += line_spacing["dialogue"]
+                elif word == "/":
+                    draw.text((70, y_position), current_line.strip(), font=style["font"], fill=style["fill"])
+                    y_position += draw.textbbox((0, 0), current_line.strip(), font=style["font"])[3] + line_spacing["dialogue"]
+                    current_line = ""
+                else:
+                    test_line = current_line + word + " "
+                    if draw.textbbox((0, 0), test_line, font=style["font"])[2] <= max_width - 40:
+                        current_line = test_line
+                    else:
+                        draw.text((70, y_position), current_line.strip(), font=style["font"], fill=style["fill"])
+                        y_position += draw.textbbox((0, 0), current_line.strip(), font=style["font"])[3] + line_spacing["dialogue"]
+                        current_line = word + " "
+            draw.text((70, y_position), current_line.strip(), font=style["font"], fill=style["fill"])
+            y_position += draw.textbbox((0, 0), current_line.strip(), font=style["font"])[3] + line_spacing["dialogue"]
+        
         elif line.startswith("[centered]"):
-            style_key = "centered"
+            style = styles["centered"]
             line = line.replace("[centered]", "")
-
-        if style_key:
-            style = styles[style_key]
-            if previous_style_key and previous_style_key != style_key:
-                y_position += 8 if previous_style_key == "title" or style_key == "title" else 4
-            
-            if style_key == "narratorc" or style_key == "centered":
-                position = (img.width // 2 - draw.textbbox((0, 0), line, font=style["font"])[2] // 2, y_position)
-                draw.text(position, line, font=style["font"], fill=style["fill"])
-                y_position += draw.textbbox((0, 0), line, font=style["font"])[3] + line_spacing.get(style_key, 6)
-            else:
-                y_position = draw_text_with_formatting(draw, (50 if style_key == "narrator" else 70, y_position), line, style["font"], style["fill"], line_spacing.get(style_key, 6))
-                if style_key == "narrator":
-                    next_line_index = text.split('\n').index(original_line) + 1
-                    if next_line_index < len(text.split('\n')) and not text.split('\n')[next_line_index].startswith("[dialogue]+"):
-                        y_position += 4
-                if style_key == "dialogue" and "[dialogue]+" not in original_line:
-                    y_position += 4
-            
-            previous_style_key = style_key
-
+            position = (img.width // 2 - draw.textbbox((0, 0), line, font=style["font"])[2] // 2, y_position)
+            draw.text(position, line, font=style["font"], fill=style["fill"])
+            y_position += draw.textbbox((0, 0), line, font=style["font"])[3] + line_spacing["centered"]
+    
     if show_next:
         next_text = "következő"
         next_position_text = (img.width - draw.textbbox((0, 0), next_text, font=styles["dialogue"]["font"])[2] - 70, img.height - 36)
@@ -104,7 +117,7 @@ if y_position >= left_arrow_top:
             right_arrow_img = Image.open("right_arrow.png")
             img.paste(right_arrow_img, next_position_arrow)
         else:
-            print("right_arrow.png not found, skipping.")
+            print("right_arrow.png nem található, kihagyva.")
     
     if show_prev:
         prev_text = "előző"
@@ -115,7 +128,7 @@ if y_position >= left_arrow_top:
             left_arrow_img = Image.open("left_arrow.png")
             img.paste(left_arrow_img, prev_position_arrow)
         else:
-            print("left_arrow.png not found, skipping.")
+            print("left_arrow.png nem található, kihagyva.")
     
     page_number_text = "1"
     for line in text.split('\n'):
@@ -144,14 +157,14 @@ def process_all_tpng_files(directory):
             output_path = os.path.join(directory, filename.replace(".tpng", ".png"))
             if os.path.exists(output_path):
                 if verify_image_text(output_path, text):
-                    print(f"{output_path} already exists and the text matches, skipping.")
+                    print(f"{output_path} már létezik és a szöveg egyezik, kihagyva.")
                     continue
                 else:
-                    print(f"{output_path} already exists, but the text differs, regenerating.")
+                    print(f"{output_path} már létezik, de a szöveg eltér, újragenerálás.")
             create_image(text, output_path)
 
-# Specify the directory where the .tpng files are located
+# A könyvtár megadása, ahol a .tpng fájlok találhatók
 directory = "tpng/"
 
-# Process all .tpng files in the specified directory
+# .tpng fájlok feldolgozása a megadott könyvtárban
 process_all_tpng_files(directory)
